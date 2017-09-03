@@ -1,0 +1,45 @@
+---
+# vars file for MySQL_Demo
+mysql_packages: [
+  "mysql-community-server",
+  "mysql-community-client",
+  "mysql-community-libs"
+]
+
+mysql_configuration:
+  port: 3306
+  bind_address: "0.0.0.0"
+  datadir: "/var/lib/mysql"
+  socket: "/var/lib/mysql/mysql.sock"
+  innodb_buffer_pool_size: "3072M"
+  innodb_log_file_size: "256M"
+  innodb_log_buffer_size: "16M"
+  innodb_flush_log_at_trx_commit: 1
+  innodb_flush_method: "O_DIRECT"
+  innodb_buffer_pool_dump_at_shutdown: True
+  innodb_buffer_pool_load_at_startup: True
+  innodb_buffer_pool_dump_pct: 100
+  sql_mode: "TRADITIONAL"
+  query_cache_size: "0M"
+  log_bin: "mysql-bin"
+  log_bin_index: "mysql-bin.index"
+  performance_schema: True
+  expire_logs_days: 7
+  max_binlog_size: 200M
+  binlog_format: "MIXED"
+  slave_compressed_protocol: 1
+  slow_query_log_file: "/var/log/mysql_slow.log"
+  slow_query_time: 2
+  max_allowed_packet: 16M
+  max_connections: 151
+  skip_name_resolve: False
+  slow_query_log: True
+
+
+mysql_users:
+  "root": "Sm6y2XWc8CTA7gHn"
+  "repl": "f4zC2zWNQ3mXkDkp"
+
+additional_packages: [
+  "MySQL-python"
+]

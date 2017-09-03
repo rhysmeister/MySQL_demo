@@ -1,0 +1,178 @@
+---
+# tasks file for MySQL_Demo
+  - name: Add MySQL Yum Repo
+    yum_repository:
+      name: "MySQL_5.7_Community_Server"
+      description: "MySQL 5.7 Community Server"
+      baseurl: "http://repo.mysql.com/yum/mysql-5.7-community/el/6/$basearch/"
+      enabled: "yes"
+      gpgcheck: 0
+    register: yum_repo_added
+
+  - name: Disable iptables
+    service:
+      name: "iptables"
+      enabled: "no"
+      state: "stopped"
+
+  - name: Upgrade default mysql-lib package
+    yum:
+      name: "mysql-libs"
+      state: "latest"
+      enablerepo: "MySQL_5.7_Community_Server"
+
+  - name: Install MySQL Packages
+    yum:
+      name: "{{ mysql_packages }}"
+      state: "installed"
+
+  - name: Install additional packages
+    yum:
+      name: "{{ additional_packages }}"
+      state: "installed"
+
+  - name: Init MySQL
+    command: mysqld --initialize --datadir=/var/lib/mysql
+    args:
+      creates: /var/lib/mysql/mysql/user.frm
+    become_user: mysql
+
+  - name: Copy my.cnf to hosts
+    template:
+      src: "templates/my.cnf"
+      dest: "/etc/my.cnf"
+      owner: "mysql"
+      group: "mysql"
+      backup: "yes"
+
+  - name: Ensure mysqld is started
+    service:
+      name: "mysqld"
+      enabled: "yes"
+      state: "started"
+
+  - name: Ensure files have mysql ownership
+    file:
+      path: "{{ item }}"
+      owner: "mysql"
+      group: "mysql"
+      state: "touch"
+    with_items:
+       - "{{ mysql_configuration.slow_query_log_file }}"
+       - "{{ mysql_configuration.socket }}"
+
+  - name: Copy mysql_alter_root_password to host
+    template:
+      src: "templates/mysql_alter_root_password.sh"
+      dest: "/home/vagrant"
+      mode: 0700
+
+  - name: Reset the root@localhost password
+    shell: /home/vagrant/mysql_alter_root_password.sh
+    args:
+      creates: /home/vagrant/root_pw_reset.success
+
+  - name: Add repl user to both hosts
+    mysql_user:
+      name: "repl"
+      password: "{{ mysql_users.repl }}"
+      priv: "*.*:REPLICATION CLIENT,REPLICATION SLAVE"
+      host: "192.168.13.%"
+      login_user: "root"
+      login_password: "{{ mysql_users.root }}"
+    register: repl_user_added
+
+  - name: Debug
+    debug:
+      var: repl_user_added
+      verbosity: 2
+
+  - name: Get replication details from mysql1
+    mysql_replication:
+      mode: getmaster
+      login_user: "root"
+      login_password: "{{ mysql_users.root }}"
+    register: mysql1_master_details
+    when: ansible_hostname == "mysql1"
+
+  - name: Output mysql1_master_details variable
+    debug:
+      var: mysql1_master_details
+      verbosity: 2
+
+  - name: Setup mysql2 as a slave of mysql1
+    mysql_replication:
+         mode: "changemaster"
+         master_host: 192.168.13.101
+         master_log_file: "{{ mysql1_master_details.File }}"
+         master_log_pos: "{{ mysql1_master_details.Position | int }}"
+         master_user: "repl"
+         master_password: "{{ mysql_users.repl }}"
+         login_user: "root"
+         login_password: "{{ mysql_users.root }}"
+    when: ansible_hostname == "mysql1" and repl_user_added.changed == True
+    register: mysql2_slave_started
+    delegate_to: mysql2
+
+  - name: Start slave on mysql2
+    mysql_replication:
+      mode: "startslave"
+      login_user: "root"
+      login_password: "{{ mysql_users.root }}"
+    when: ansible_hostname == "mysql2"
+
+  - name: "Create database"
+    mysql_db:
+      name: "rhys"
+      state: "present"
+      login_user: "root"
+      login_password: "{{ mysql_users.root }}"
+    when: ansible_hostname == "mysql1"
+
+  - name: "Create read only user"
+    mysql_user:
+      name: "rhys_ro"
+      password: "secret"
+      priv:  "rhys.*:SELECT"
+      state: "present"
+      login_user: "root"
+      login_password: "{{ mysql_users.root }}"
+    when: ansible_hostname == "mysql1"
+
+  - name: "Create read/write user"
+    mysql_user:
+      name: "rhys_rw"
+      password: "secret"
+      priv:  "rhys.*:SELECT,INSERT,UPDATE,DELETE"
+      state: "present"
+      login_user: "root"
+      login_password: "{{ mysql_users.root }}"
+    when: ansible_hostname == "mysql1"
+
+  - name: "Copy sql files to mysql1"
+    copy:
+      src: "{{ item }}"
+      dest: "/home/vagrant/"
+    with_items:
+      - "../templates/identity.sql"
+      - "../templates/profile.sql"
+      - "../templates/generate_data.sql"
+    when: ansible_hostname == "mysql1"
+
+  - name: "Execute identity.sql file"
+    shell: "mysql -D rhys -u root -p{{ mysql_users.root }} < /home/vagrant/identity.sql"
+    when: ansible_hostname == "mysql1"
+
+  - name: "Execute profile.sql file"
+    shell: "mysql -D rhys -u root -p{{ mysql_users.root }} < /home/vagrant/profile.sql"
+    when: ansible_hostname == "mysql1"
+
+  - name: "Execute generate_data.sql file"
+    shell: "mysql -D rhys -u root -p{{ mysql_users.root }} < /home/vagrant/generate_data.sql"
+    when: ansible_hostname == "mysql1"
+
+  - name: "Executing generate_data stored proc. I may be some time... "
+    shell: "mysql -D rhys -u root -p{{ mysql_users.root }} -e 'CALL generate_data()' && touch /home/vagrant/generate_data.success"
+    args:
+      creates: /home/vagrant/generate_data.success
+    when: ansible_hostname == "mysql1"

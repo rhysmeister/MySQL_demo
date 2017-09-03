@@ -1,0 +1,10 @@
+# An identity can have many profiles
+CREATE TABLE IF NOT EXISTS identity (
+  id INTEGER UNSIGNED NOT NULL PRIMARY KEY AUTO_INCREMENT,
+  username VARCHAR(30) NOT NULL,
+  email VARCHAR(100) NOT NULL,
+  password_hash VARCHAR(100) NOT NULL,
+  created DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY (username),
+  UNIQUE KEY (email)
+);
