@@ -56,6 +56,7 @@
       path: "{{ item }}"
       owner: "mysql"
       group: "mysql"
+      mode: 0755
       state: "touch"
     with_items:
        - "{{ mysql_configuration.slow_query_log_file }}"
